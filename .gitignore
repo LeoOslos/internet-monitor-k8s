@@ -1,0 +1,16 @@
+# Secretos - nunca al repositorio
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# Datos generados en runtime - los maneja K8s
+data/
+logs/
+exports/
+
+# Instalador viejo
+*.tar.gz
