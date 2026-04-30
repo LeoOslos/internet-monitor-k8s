@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: internet-monitor-config
+data:
+  LOCATION_NAME: "Casa"
+  PING_TARGETS: "8.8.8.8,1.1.1.1,8.8.4.4"
+  CHECK_INTERVAL_S: "30"
+  DASHBOARD_PORT: "8765"
+  DB_PATH: "/app/data/monitor.db"
+  LOG_DIR: "/app/logs"
+  CSV_EXPORT_DIR: "/app/exports"
+  EMAIL_ENABLED: "false"

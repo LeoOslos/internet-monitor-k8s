@@ -1,32 +1,24 @@
 """
 Configuración del Internet Monitor.
-Los secretos se leen del archivo .env (nunca compartir ese archivo).
+En Kubernetes los valores vienen de ConfigMap y Secret como variables de entorno.
+En desarrollo local siguen funcionando desde el archivo .env
 """
-
 import os
 from dotenv import load_dotenv
 
+# En desarrollo local carga el .env, en Kubernetes no hay .env y no pasa nada
 load_dotenv()
 
 CONFIG = {
-    "location_name": "Casa",
-
-    "ping_targets": [
-        "8.8.8.8",   # Google DNS
-        "1.1.1.1",   # Cloudflare DNS
-        "8.8.4.4",   # Google DNS secundario
-    ],
-
-    "check_interval_s": 30,
-
-    "db_path":        "/home/leoadmin/internet-monitor/data/monitor.db",
-    "log_dir":        "/home/leoadmin/internet-monitor/logs",
-    "csv_export_dir": "/home/leoadmin/internet-monitor/exports",
-
-    "dashboard_port": 8765,
-
+    "location_name":  os.getenv("LOCATION_NAME", "Casa"),
+    "ping_targets":   os.getenv("PING_TARGETS", "8.8.8.8,1.1.1.1,8.8.4.4").split(","),
+    "check_interval_s": int(os.getenv("CHECK_INTERVAL_S", "30")),
+    "db_path":        os.getenv("DB_PATH", "./data/monitor.db"),
+    "log_dir":        os.getenv("LOG_DIR", "./logs"),
+    "csv_export_dir": os.getenv("CSV_EXPORT_DIR", "./exports"),
+    "dashboard_port": int(os.getenv("DASHBOARD_PORT", "8765")),
     "email": {
-        "enabled":      False,  # ← cambiar a True cuando cargues las credenciales en .env
+        "enabled":      os.getenv("EMAIL_ENABLED", "false").lower() == "true",
         "from":         os.getenv("EMAIL_FROM", ""),
         "to":           os.getenv("EMAIL_TO", ""),
         "app_password": os.getenv("EMAIL_APP_PASSWORD", ""),
