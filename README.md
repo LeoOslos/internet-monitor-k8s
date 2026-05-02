@@ -1,6 +1,64 @@
-# Internet Monitor K8s
+# Internet Monitor
 
-Monitor de calidad de conexión a internet desplegado en Kubernetes. Mide latencia, jitter y packet loss cada 30 segundos contra múltiples targets, detecta cortes y expone un dashboard web en tiempo real.
+Monitor de calidad de conexión a internet. Mide latencia, jitter y packet loss cada 30 segundos contra múltiples targets, detecta cortes y expone un dashboard web en tiempo real.
+
+**Dos formas de ejecutarlo:**
+
+| | Docker Compose | Kubernetes |
+|---|---|---|
+| **Para quién** | Uso personal o doméstico | Infraestructura o producción |
+| **Requisito** | Docker instalado | Cluster Kubernetes (k3s, etc.) |
+| **Complejidad** | Mínima — tres comandos | Requiere conocimientos de K8s |
+| **Persistencia** | Volúmenes Docker | PersistentVolume en el nodo |
+
+---
+
+## Inicio rápido con Docker Compose
+
+> Esta es la opción recomendada si solo querés monitorear tu conexión en una PC o servidor con Docker instalado, sin necesidad de Kubernetes.
+
+### Paso 1 — Descargá el proyecto
+
+```bash
+git clone https://github.com/LeoOslos/internet-monitor-k8s.git
+cd internet-monitor-k8s
+```
+
+### Paso 2 — Levantá los servicios
+
+```bash
+docker compose up -d
+```
+
+Este comando construye la imagen y arranca el monitor y el dashboard en segundo plano. La primera vez tarda unos minutos mientras descarga las dependencias.
+
+### Paso 3 — Abrí el dashboard
+
+Abrí tu navegador y entrá a:
+
+```
+http://localhost:8765
+```
+
+Listo. El monitor empieza a registrar datos de inmediato y el dashboard se actualiza solo cada 30 segundos.
+
+---
+
+**Para detenerlo:**
+
+```bash
+docker compose down
+```
+
+Los datos quedan guardados en volúmenes Docker y se recuperan la próxima vez que hagas `docker compose up -d`.
+
+**Para ver los logs en tiempo real:**
+
+```bash
+docker compose logs -f monitor
+```
+
+**Para cambiar la configuración** (nombre del lugar, IPs a monitorear, etc.) editá las variables de entorno en `docker-compose.yml` y reiniciá con `docker compose up -d`.
 
 ---
 
@@ -36,47 +94,46 @@ Monitor de calidad de conexión a internet desplegado en Kubernetes. Mide latenc
 └─────────────────────────────────────────────────────┘
 ```
 
+En Docker Compose la estructura es equivalente pero usando volúmenes Docker nombrados (`monitor_data`, `monitor_logs`, `monitor_exports`) en lugar de un PersistentVolume.
+
 ---
 
 ## Componentes
 
-### Pods
+### Servicios
 
-| Pod | Imagen | Descripción |
-|-----|--------|-------------|
-| `internet-monitor` | `internet-monitor:latest` | Loop de monitoreo — hace ping, guarda resultados en SQLite y detecta cortes |
-| `internet-monitor-dashboard` | `internet-monitor:latest` | Servidor HTTP que lee la DB y expone el dashboard en el puerto 8765 |
+| Servicio | Imagen | Descripción |
+|----------|--------|-------------|
+| `monitor` | `internet-monitor:latest` | Loop de monitoreo — hace ping, guarda resultados en SQLite y detecta cortes |
+| `dashboard` | `internet-monitor:latest` | Servidor HTTP que lee la DB y expone el dashboard en el puerto 8765 |
 
-Ambos pods usan la misma imagen Docker. El dashboard sobreescribe el `CMD` del Dockerfile para ejecutar `dashboard-internet.py` en lugar de `monitor-internet.py`.
+Ambos servicios usan la misma imagen Docker. El dashboard sobreescribe el `CMD` del Dockerfile para ejecutar `dashboard-internet.py` en lugar de `monitor-internet.py`.
 
 ### Almacenamiento
 
 | Recurso | Tipo | Descripción |
 |---------|------|-------------|
-| `internet-monitor-pv` | PersistentVolume | Volumen hostPath en `./storage/` del nodo |
-| `internet-monitor-pvc` | PersistentVolumeClaim | Claim de 1Gi montado por ambos pods |
+| `internet-monitor-pv` *(K8s)* | PersistentVolume | Volumen hostPath en `./storage/` del nodo |
+| `internet-monitor-pvc` *(K8s)* | PersistentVolumeClaim | Claim de 1Gi montado por ambos pods |
+| `monitor_data` *(Compose)* | Volumen Docker | Base de datos SQLite compartida entre monitor y dashboard |
+| `monitor_logs` *(Compose)* | Volumen Docker | Logs del proceso de monitoreo |
+| `monitor_exports` *(Compose)* | Volumen Docker | CSVs exportados diariamente |
 
-Estructura en el host:
+Estructura de datos:
 
 ```
-storage/
-├── data/
-│   └── monitor.db      # Base de datos SQLite (WAL mode)
-├── logs/
-│   └── monitor.log     # Log del proceso de monitoreo
-└── exports/
-    └── internet_YYYY-MM-DD.csv   # CSV diario exportado automáticamente
-    └── cortes_YYYY-MM-DD.csv     # CSV de cortes del día
+data/
+└── monitor.db              # Base de datos SQLite (WAL mode)
+logs/
+└── monitor.log             # Log del proceso de monitoreo
+exports/
+├── internet_YYYY-MM-DD.csv # Muestras de ping del día
+└── cortes_YYYY-MM-DD.csv   # Cortes detectados en el día
 ```
 
 ### Configuración
 
-| Recurso | Tipo | Descripción |
-|---------|------|-------------|
-| `internet-monitor-config` | ConfigMap | Variables de configuración (targets, intervalo, puertos, paths) |
-| `internet-monitor-secret` | Secret | Credenciales opcionales de email para notificaciones |
-
-Variables del ConfigMap:
+Variables de entorno disponibles:
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
@@ -88,12 +145,9 @@ Variables del ConfigMap:
 | `LOG_DIR` | `/app/logs` | Directorio de logs |
 | `CSV_EXPORT_DIR` | `/app/exports` | Directorio de exportaciones CSV |
 | `EMAIL_ENABLED` | `false` | Activa notificaciones por email al recuperarse la conexión |
-
-### Servicio
-
-| Recurso | Tipo | Puerto |
-|---------|------|--------|
-| `internet-monitor-dashboard` | NodePort | `30765` → `8765` |
+| `EMAIL_FROM` | — | Cuenta Gmail de origen |
+| `EMAIL_TO` | — | Destinatario de las notificaciones |
+| `EMAIL_APP_PASSWORD` | — | App Password de Gmail |
 
 ---
 
@@ -107,7 +161,11 @@ SQLite con tres tablas:
 
 ---
 
-## Manifests K8s
+## Despliegue en Kubernetes (avanzado)
+
+> Usá esta opción si tenés un cluster Kubernetes y querés aprovechar su orquestación, reinicio automático de pods y gestión de volúmenes persistentes.
+
+### Manifests
 
 ```
 k8s/
@@ -119,24 +177,10 @@ k8s/
 └── dashboard-service.yaml     # Service NodePort para el dashboard
 ```
 
----
-
-## Despliegue
-
-### Requisitos
-
-- Kubernetes (k3s o similar)
-- Docker
-
-### 1. Construir la imagen
+### 1. Construir e importar la imagen
 
 ```bash
 docker build -t internet-monitor:latest .
-```
-
-Para k3s, importar la imagen al containerd del nodo:
-
-```bash
 docker save internet-monitor:latest | sudo k3s ctr images import -
 ```
 

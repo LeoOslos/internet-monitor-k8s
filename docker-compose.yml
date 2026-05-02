@@ -1,0 +1,41 @@
+services:
+  monitor:
+    build: .
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+    environment:
+      LOCATION_NAME: "Casa"
+      PING_TARGETS: "8.8.8.8,1.1.1.1,8.8.4.4"
+      CHECK_INTERVAL_S: "30"
+      DB_PATH: "/app/data/monitor.db"
+      LOG_DIR: "/app/logs"
+      CSV_EXPORT_DIR: "/app/exports"
+      EMAIL_ENABLED: "false"
+      EMAIL_FROM: ""
+      EMAIL_TO: ""
+      EMAIL_APP_PASSWORD: ""
+
+    volumes:
+      - monitor_data:/app/data
+      - monitor_logs:/app/logs
+      - monitor_exports:/app/exports
+
+  dashboard:
+    build: .
+    command: python dashboard-internet.py
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      DB_PATH: "/app/data/monitor.db"
+      DASHBOARD_PORT: "8765"
+    volumes:
+      - monitor_data:/app/data
+    depends_on:
+      - monitor
+
+volumes:
+  monitor_data:
+  monitor_logs:
+  monitor_exports:
