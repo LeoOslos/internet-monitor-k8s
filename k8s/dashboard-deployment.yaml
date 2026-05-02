@@ -1,21 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: internet-monitor
+  name: internet-monitor-dashboard
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: internet-monitor
+      app: internet-monitor-dashboard
   template:
     metadata:
       labels:
-        app: internet-monitor
+        app: internet-monitor-dashboard
     spec:
       containers:
-        - name: internet-monitor
+        - name: dashboard
           image: internet-monitor:latest
           imagePullPolicy: Never
+          command: ["python", "dashboard-internet.py"]
+          ports:
+            - containerPort: 8765
           envFrom:
             - configMapRef:
                 name: internet-monitor-config
@@ -25,12 +28,6 @@ spec:
             - name: storage
               mountPath: /app/data
               subPath: data
-            - name: storage
-              mountPath: /app/logs
-              subPath: logs
-            - name: storage
-              mountPath: /app/exports
-              subPath: exports
       volumes:
         - name: storage
           persistentVolumeClaim:
