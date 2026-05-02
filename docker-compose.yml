@@ -12,9 +12,9 @@ services:
       LOG_DIR: "/app/logs"
       CSV_EXPORT_DIR: "/app/exports"
       EMAIL_ENABLED: "false"
-      EMAIL_FROM: ""
-      EMAIL_TO: ""
-      EMAIL_APP_PASSWORD: ""
+      EMAIL_FROM: ${EMAIL_FROM}
+      EMAIL_TO: ${EMAIL_TO}
+      EMAIL_APP_PASSWORD: ${EMAIL_APP_PASSWORD}
 
     volumes:
       - monitor_data:/app/data
@@ -23,13 +23,14 @@ services:
 
   dashboard:
     build: .
-    command: python dashboard-internet.py
+    command: python -u dashboard-internet.py
     restart: unless-stopped
     ports:
-      - "8765:8765"
+      - "9090:8765"
     environment:
       DB_PATH: "/app/data/monitor.db"
       DASHBOARD_PORT: "8765"
+      PYTHONUNBUFFERED: "1"
     volumes:
       - monitor_data:/app/data
     depends_on:

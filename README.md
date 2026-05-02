@@ -13,6 +13,42 @@ Monitor de calidad de conexión a internet. Mide latencia, jitter y packet loss 
 
 ---
 
+## Prerrequisitos
+
+Para usar Docker Compose necesitás tener Docker instalado. Seguí las instrucciones según tu sistema operativo:
+
+### Windows
+
+1. Descargá **Docker Desktop** desde [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+2. Ejecutá el instalador y seguí los pasos (acepta los valores por defecto)
+3. Reiniciá la PC cuando lo pida
+4. Abrí Docker Desktop y esperá a que el ícono de la ballena en la barra de tareas quede estable (deja de animarse)
+5. Abrí una terminal (buscá "PowerShell" o "CMD" en el menú inicio) y verificá que funciona:
+   ```
+   docker --version
+   ```
+
+### Linux (Ubuntu / Debian)
+
+Abrí una terminal y ejecutá estos comandos uno por uno:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+```
+
+Cerrá sesión y volvé a entrar para que el último comando tenga efecto. Luego verificá:
+
+```bash
+docker --version
+```
+
+> En otras distribuciones (Fedora, Arch, etc.) consultá la [documentación oficial de Docker](https://docs.docker.com/engine/install/).
+
+---
+
 ## Inicio rápido con Docker Compose
 
 > Esta es la opción recomendada si solo querés monitorear tu conexión en una PC o servidor con Docker instalado, sin necesidad de Kubernetes.
@@ -24,7 +60,17 @@ git clone https://github.com/LeoOslos/internet-monitor-k8s.git
 cd internet-monitor-k8s
 ```
 
-### Paso 2 — Levantá los servicios
+### Paso 2 — Configurá las credenciales (opcional)
+
+Si querés recibir notificaciones por email cuando se corte la conexión, copiá el archivo de ejemplo y completá tus datos:
+
+```bash
+cp .env.example .env
+```
+
+Abrí `.env` con cualquier editor de texto y completá los campos. Si no querés notificaciones, no hace falta hacer nada — el monitor funciona sin email.
+
+### Paso 3 — Levantá los servicios
 
 ```bash
 docker compose up -d
@@ -32,12 +78,12 @@ docker compose up -d
 
 Este comando construye la imagen y arranca el monitor y el dashboard en segundo plano. La primera vez tarda unos minutos mientras descarga las dependencias.
 
-### Paso 3 — Abrí el dashboard
+### Paso 4 — Abrí el dashboard
 
 Abrí tu navegador y entrá a:
 
 ```
-http://localhost:8765
+http://localhost:9090
 ```
 
 Listo. El monitor empieza a registrar datos de inmediato y el dashboard se actualiza solo cada 30 segundos.
@@ -56,6 +102,7 @@ Los datos quedan guardados en volúmenes Docker y se recuperan la próxima vez q
 
 ```bash
 docker compose logs -f monitor
+docker compose logs -f dashboard
 ```
 
 **Para cambiar la configuración** (nombre del lugar, IPs a monitorear, etc.) editá las variables de entorno en `docker-compose.yml` y reiniciá con `docker compose up -d`.
@@ -105,7 +152,7 @@ En Docker Compose la estructura es equivalente pero usando volúmenes Docker nom
 | Servicio | Imagen | Descripción |
 |----------|--------|-------------|
 | `monitor` | `internet-monitor:latest` | Loop de monitoreo — hace ping, guarda resultados en SQLite y detecta cortes |
-| `dashboard` | `internet-monitor:latest` | Servidor HTTP que lee la DB y expone el dashboard en el puerto 8765 |
+| `dashboard` | `internet-monitor:latest` | Servidor HTTP que lee la DB y expone el dashboard en el puerto 9090 |
 
 Ambos servicios usan la misma imagen Docker. El dashboard sobreescribe el `CMD` del Dockerfile para ejecutar `dashboard-internet.py` en lugar de `monitor-internet.py`.
 
@@ -140,14 +187,16 @@ Variables de entorno disponibles:
 | `LOCATION_NAME` | `Casa` | Nombre del nodo de monitoreo |
 | `PING_TARGETS` | `8.8.8.8,1.1.1.1,8.8.4.4` | IPs a monitorear (separadas por coma) |
 | `CHECK_INTERVAL_S` | `30` | Intervalo entre chequeos en segundos |
-| `DASHBOARD_PORT` | `8765` | Puerto del servidor HTTP del dashboard |
+| `DASHBOARD_PORT` | `8765` | Puerto interno del servidor HTTP |
 | `DB_PATH` | `/app/data/monitor.db` | Path de la base de datos SQLite |
 | `LOG_DIR` | `/app/logs` | Directorio de logs |
 | `CSV_EXPORT_DIR` | `/app/exports` | Directorio de exportaciones CSV |
 | `EMAIL_ENABLED` | `false` | Activa notificaciones por email al recuperarse la conexión |
-| `EMAIL_FROM` | — | Cuenta Gmail de origen |
-| `EMAIL_TO` | — | Destinatario de las notificaciones |
-| `EMAIL_APP_PASSWORD` | — | App Password de Gmail |
+| `EMAIL_FROM` | — | Cuenta Gmail de origen (definida en `.env`) |
+| `EMAIL_TO` | — | Destinatario de las notificaciones (definida en `.env`) |
+| `EMAIL_APP_PASSWORD` | — | App Password de Gmail (definida en `.env`) |
+
+Las credenciales de email se leen desde el archivo `.env` en la raíz del proyecto. Ese archivo no se sube al repositorio (está en `.gitignore`). Usá `.env.example` como plantilla.
 
 ---
 
@@ -161,11 +210,26 @@ SQLite con tres tablas:
 
 ---
 
-## Despliegue en Kubernetes (avanzado)
+## Solución de problemas
 
-> Usá esta opción si tenés un cluster Kubernetes y querés aprovechar su orquestación, reinicio automático de pods y gestión de volúmenes persistentes.
+### `docker compose logs dashboard` no muestra nada
 
-### Manifests
+Python buferea stdout cuando no corre en una terminal. El `docker-compose.yml` ya incluye `PYTHONUNBUFFERED=1` y el flag `-u` en el comando para forzar flush inmediato. Si aun así no ves logs, reiniciá el contenedor:
+
+```bash
+docker compose restart dashboard
+docker compose logs dashboard
+```
+
+Deberías ver `Dashboard corriendo en http://0.0.0.0:8765` al arrancar.
+
+### El dashboard devuelve error 503
+
+El dashboard arranca antes de que el monitor cree la base de datos. Esperá unos segundos y recargá la página — en cuanto el monitor complete su primer ciclo (máximo 30 segundos) el dashboard funciona normalmente.
+
+---
+
+## Manifests K8s
 
 ```
 k8s/
@@ -176,6 +240,12 @@ k8s/
 ├── dashboard-deployment.yaml  # Deployment del dashboard
 └── dashboard-service.yaml     # Service NodePort para el dashboard
 ```
+
+---
+
+## Despliegue en Kubernetes (avanzado)
+
+> Usá esta opción si tenés un cluster Kubernetes y querés aprovechar su orquestación, reinicio automático de pods y gestión de volúmenes persistentes.
 
 ### 1. Construir e importar la imagen
 
